@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: traefik-ingress-controller
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: traefik-ingress-controller
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - services
+      - endpoints
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - extensions
+    resources:
+      - ingresses
+    verbs:
+      - get
+      - list
+      - watch
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: traefik-ingress-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: traefik-ingress-controller
+subjects:
+- kind: ServiceAccount
+  name: traefik-ingress-controller
+  namespace: kube-system
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  labels:
+    k8s-app: traefik-ingress
+  name: traefik-ingress
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      k8s-app: traefik-ingress
+      name: traefik-ingress
+  template:
+    metadata:
+      labels:
+        k8s-app: traefik-ingress
+        name: traefik-ingress
+    spec:
+      containers:
+      - args:
+        - --api
+        - --ping
+        - --ping.entryPoint=ping
+        - --entryPoints=Name:http Address::80
+        - --entryPoints=Name:internal Address::8000
+        - --entryPoints=Name:ping Address::8001
+        - --accessLog.filePath=/var/log/traefik/access.log
+        - --accessLog.filters.statusCodes=100-599
+        - --accessLog.fields.defaultMode=keep
+        - --accessLog.fields.headers.defaultMode=keep
+        - --accessLog.bufferingSize=100
+        - --kubernetes
+        image: traefik
+        imagePullPolicy: Always
+        name: traefik-ingress
+        ports:
+        - containerPort: 80
+          hostPort: 80
+          name: http
+          protocol: TCP
+        - containerPort: 8000
+          hostPort: 8000
+          name: internal
+          protocol: TCP
+        - containerPort: 8001
+          hostPort: 8001
+          name: ping
+          protocol: TCP
+        - containerPort: 8080
+          hostPort: 8080
+          name: admin
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /var/log/traefik
+          name: traefik-log
+        resources:
+          requests:
+            cpu: 300m
+            memory: 100Mi
+          limits:
+            cpu: 1000m
+            memory: 1000Mi
+      - args:
+        - -c
+        - /etc/filebeat.yml
+        - -e
+        image: docker.elastic.co/beats/filebeat:6.4.2
+        imagePullPolicy: IfNotPresent
+        name: filebeat
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 4000Mi
+          requests:
+            cpu: 200m
+            memory: 400Mi
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /etc/filebeat.yml
+          name: config
+          readOnly: true
+          subPath: filebeat.yml
+        - mountPath: /usr/share/filebeat/data
+          name: filebeat-data
+        - mountPath: /var/log/traefik
+          name: traefik-log
+      dnsPolicy: ClusterFirst
+      hostNetwork: true
+      nodeSelector:
+        edgenode: normal
+      restartPolicy: Always
+      serviceAccount: traefik-ingress-controller
+      serviceAccountName: traefik-ingress-controller
+      volumes:
+      - hostPath:
+          path: /mnt/traefik-log
+          type: DirectoryOrCreate
+        name: traefik-log
+      - configMap:
+          defaultMode: 384
+          name: traefik-filebeat-config
+        name: config
+      - hostPath:
+          path: /mnt/traefik-log-filebeat-data
+          type: DirectoryOrCreate
+        name: filebeat-data
+  updateStrategy:
+    type: OnDelete
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    k8s-app: traefik-filebeat
+  name: traefik-filebeat-config
+data:
+  filebeat.yml: |-
+    filebeat.inputs:
+      - type: log
+        paths:
+        - /var/log/traefik/access.log
+    output.elasticsearch:
+      hosts: ['**elasticsearch_host**:**port**']
+      username: **username**
+      password: **password**
+
