@@ -199,6 +199,7 @@ data:
       hosts: ['******']
       username: ******
       password: *******
+      pipeline: traefik_log_pipeline
 kind: ConfigMap
 metadata:
   labels:
