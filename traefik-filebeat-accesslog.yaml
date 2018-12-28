@@ -40,6 +40,35 @@ subjects:
   name: traefik-ingress-controller
   namespace: kube-system
 ---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: traefik-filebeat
+  labels:
+    k8s-app: traefik-filebeat
+rules:
+- apiGroups: [""]
+  resources:
+  - namespaces
+  - pods
+  verbs:
+  - get
+  - watch
+  - list
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: traefik-filebeat
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: traefik-filebeat
+subjects:
+- kind: ServiceAccount
+  name: traefik-ingress-controller
+  namespace: kube-system
+---
 apiVersion: extensions/v1beta1
 kind: DaemonSet
 metadata:
@@ -106,7 +135,7 @@ spec:
         - -c
         - /etc/filebeat.yml
         - -e
-        image: docker.elastic.co/beats/filebeat:6.4.2
+        image: docker.elastic.co/beats/filebeat:6.5.4
         imagePullPolicy: IfNotPresent
         name: filebeat
         resources:
@@ -151,19 +180,27 @@ spec:
     type: OnDelete
 ---
 apiVersion: v1
-kind: ConfigMap
-metadata:
-  labels:
-    k8s-app: traefik-filebeat
-  name: traefik-filebeat-config
 data:
   filebeat.yml: |-
     filebeat.inputs:
       - type: log
         paths:
         - /var/log/traefik/access.log
+        processors:
+        - dissect:
+            tokenizer: "%{clientip} %{ident} %{auth} [%{@timestamp}] \"%{verb} %{request} HTTP/%{httpversion}\" %{status} %{size} \"%{reference}\" \"%{user_agent}\" %{traefik_offset} \"%{frontend}\" \"%{backend}\" %{request_duration}ms"
+            target_prefix: "access"
+        - drop_fields:
+            fields:
+            - "input.type"
+            - "prospector.type"
+            - "source"
     output.elasticsearch:
-      hosts: ['**elasticsearch_host**:**port**']
-      username: **username**
-      password: **password**
-
+      hosts: ['******']
+      username: ******
+      password: *******
+kind: ConfigMap
+metadata:
+  labels:
+    k8s-app: traefik-filebeat
+  name: traefik-filebeat-config
