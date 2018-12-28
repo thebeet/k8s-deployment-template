@@ -1,0 +1,29 @@
+{
+  "description": "converts the traefik access log some fields to integer",
+  "processors" : [
+    {
+      "convert" : {
+        "field" : "access.size",
+        "type": "integer"
+      }
+    }, 
+    {
+      "convert" : {
+        "field" : "access.request_duration",
+        "type": "integer"
+      }
+    }, 
+    {
+      "convert" : {
+        "field" : "access.traefik_offset",
+        "type": "long"
+      }
+    }, 
+    {
+      "convert" : {
+        "field" : "access.status",
+        "type": "integer"
+      }
+    }
+  ]
+}
